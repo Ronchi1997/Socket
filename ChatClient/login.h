@@ -2,12 +2,11 @@
 #define LOGIN_H
 
 #include <QDialog>
+#include <string>
 #include "connectserver.h"
 #include "interface.h"
 #include "register.h"
 #include "findpwd.h"
-
-#define IP "10.14.127.61"
 #define PORT 8888
 
 namespace Ui {
@@ -37,6 +36,7 @@ private:
     Findpwd* findpwd;
     int sockfd;
     connectServer cs;
+    string IP;
 private slots:
     void on_btn_login_clicked();
     void on_btn_register_clicked();

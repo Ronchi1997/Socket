@@ -29,9 +29,7 @@ SOURCES += \
     connectserver.cpp \
     findpwd.cpp \
     login.cpp \
-    recvmsgthread.cpp \
-    register.cpp \
-    dialog.cpp
+    register.cpp
 
 HEADERS += \
         interface.h \
@@ -39,13 +37,10 @@ HEADERS += \
     findpwd.h \
     login.h \
     msg.h \
-    recvmsgthread.h \
-    register.h \
-    dialog.h
+    register.h
 
 FORMS += \
         interface.ui \
     findpwd.ui \
     login.ui \
-    register.ui \
-    dialog.ui
+    register.ui

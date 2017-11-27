@@ -16,6 +16,7 @@ Login::~Login()
 
 void Login::on_btn_login_clicked()
 {
+    IP = ui->lineEdit->text().toStdString().c_str();
     if(sockfd != -1)
         cs.closeSockfd(sockfd);
     sockfd = cs.connectTo(IP,PORT);
@@ -63,6 +64,7 @@ void Login::on_btn_login_clicked()
 
 void Login::on_btn_register_clicked()
 {
+    IP = ui->lineEdit->text().toStdString().c_str();
     if(-1 == sockfd)
     {
         connectServer cs;
@@ -80,6 +82,7 @@ void Login::on_btn_register_clicked()
 
 void Login::on_btn_findpwd_clicked()
 {
+    IP = ui->lineEdit->text().toStdString().c_str();
     if(-1 == sockfd)
     {
         connectServer cs;

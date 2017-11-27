@@ -9,12 +9,18 @@ Interface::Interface(int sockfd, int my_id, QWidget *parent) :
     socket = new QTcpSocket(this);
     server = new QTcpServer(this);
     initSocket();
+    udpSocket = new QUdpSocket(this);
+    udpSocket->bind(QHostAddress::Any, PORT_F);
+    connect(udpSocket, SIGNAL(readyRead()),this, SLOT(readPendingDatagrams()));
 
     chatType = 0;
     to_user_id = 0;
     msg.to_user_id = 0;
     msg.from_user_id = this->my_id;
     condition = false;
+    sendflag = 0;
+    isend = 0;
+    irecv = 0;
 
     ui->tableWidget_msgPage->setColumnCount(1);
     ui->tableWidget_msgPage->setShowGrid(false);
@@ -22,16 +28,15 @@ Interface::Interface(int sockfd, int my_id, QWidget *parent) :
     ui->tableWidget_msgPage->verticalHeader()->setVisible(false);
     ui->tableWidget_msgPage->horizontalHeader()->setVisible(false);
     ui->tableWidget_msgPage->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    int row_count = ui->tableWidget_msgPage->rowCount();
+    ui->tableWidget_msgPage->insertRow(row_count);
+    ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem("my ID is: "+ QString::number(my_id,10)));
 
     ui->btn_send->setEnabled(false);
     ui->btn_fsend->setEnabled(false);
     ui->btn_over->setEnabled(false);
     recvoffmsg();
     initp2pServer();
-//    thread = new recvMsgThread(sockfd);
-//    thread->start();
-
-    //connect(thread,SIGNAL(sendMsg_signal(Msg*)),this,SLOT(recv_msg(Msg*)));
 }
 
 Interface::~Interface()
@@ -39,6 +44,8 @@ Interface::~Interface()
     delete ui;
     socket->close();
     server->close();
+    udpSocket->close();
+    delete progressDlg;
 }
 
 void Interface::closeEvent(QCloseEvent *event)
@@ -58,20 +65,6 @@ void Interface::closeEvent(QCloseEvent *event)
         event->accept();  //接受退出信号，程序退出
     }
 }
-
-//void Interface::recv_msg(Msg* msg)
-//{
-//    if(chatType)//P2P
-//    {
-//        to_user_id = msg->from_user_id;
-//    }
-
-//    if(msg->from_user_id == this->msg.from_user_id)
-//        return;
-//    int row_count = ui->tableWidget_msgPage->rowCount();
-//    ui->tableWidget_msgPage->insertRow(row_count);
-//    ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem(QString(msg->from_user_name) +": " + QString(msg->msg)));
-//}
 
 void Interface::delete_Msg()
 {
@@ -106,10 +99,9 @@ void Interface::on_btn_search_clicked()
         to_user_id = atoi(of.id);
         if(of.online)
         {
-            char ip[16],name[20];
+            char ip[16];
             ui->chatuser->setText(ui->lineEdit_Searchuser->text()+"(在线)");
             recv(sockfd,&ip,sizeof(ip),0);
-            recv(sockfd,&name,sizeof(name),0);
             to_user_ip = QString(ip);
             fromname = QString(name);
             ui->btn_fsend->setEnabled(true);
@@ -142,6 +134,7 @@ void Interface::on_btn_over_clicked()
     send(sockfd,&msg,sizeof(msg),0);
 
     p2pover();
+    sendflag = 0;
 }
 
 void Interface::on_btn_send_clicked()
@@ -162,7 +155,7 @@ void Interface::on_btn_send_clicked()
     if(chatType == 0)
         send(sockfd,&msg,sizeof(msg),0);
     else
-        socket->write((fromname + ": " + msg_str).toStdString().c_str());
+        socket->write(msg_str.toStdString().c_str());
     ui->lineEdit_msg->clear();
 }
 
@@ -200,6 +193,7 @@ void Interface::p2pstart()
     QHostAddress address(to_user_ip);
     socket->connectToHost(address, PORT_P2P);
     connected();
+    condition = true;
 }
 
 void Interface::p2pover()
@@ -208,13 +202,7 @@ void Interface::p2pover()
         return;
     socket->disconnectFromHost();
     disconnected();
-}
-
-void Interface::on_btn_fsend_clicked()
-{
-    fileName = QFileDialog::getOpenFileName(this,
-                                           tr("Open Spreadsheet"), ".",
-                                           tr("Images (*.MP3 *.MP4 *.RMVB *.JPG)"));
+    condition = false;
 }
 
 void Interface::initSocket() {
@@ -226,27 +214,23 @@ void Interface::initSocket() {
 }
 
 void Interface::connected() {
-
+    if(condition == true)
+        return;
     int row_count = ui->tableWidget_msgPage->rowCount();
     ui->tableWidget_msgPage->insertRow(row_count);
     ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem("Connected!"));
-    ui->btn_send->setEnabled(true);
-    ui->btn_fsend->setEnabled(true);
 
     condition = true;
-
 }
 
 void Interface::disconnected() {
-
+    if(condition == false)
+        return;
     int row_count = ui->tableWidget_msgPage->rowCount();
     ui->tableWidget_msgPage->insertRow(row_count);
     ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem("Disconnected:) 连接已断开"));
-    ui->btn_send->setEnabled(false);
-    ui->btn_fsend->setEnabled(false);
 
     condition = false;
-
 }
 
 void Interface::readData() {
@@ -254,7 +238,7 @@ void Interface::readData() {
     QString data(socket->readAll());
     int row_count = ui->tableWidget_msgPage->rowCount();
     ui->tableWidget_msgPage->insertRow(row_count);
-    ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem(data));
+    ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem(fromname+": "+data));
 
 }
 
@@ -265,14 +249,125 @@ void Interface::initp2pServer()
     connect(server, SIGNAL(newConnection()), this, SLOT(newConnection()));
 }
 
-void Interface::newConnection() {
-
+void Interface::newConnection()
+{
     socket = server->nextPendingConnection();
     int row_count = ui->tableWidget_msgPage->rowCount();
     ui->tableWidget_msgPage->insertRow(row_count);
     ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem("Connected!"));
-    ui->btn_send->setEnabled(true);
-    ui->btn_fsend->setEnabled(true);
-    connect(socket, SIGNAL(readyRead()), this, SLOT(readData()));
 
+    connect(socket, SIGNAL(readyRead()), this, SLOT(readData()));
 }
+
+void Interface::on_btn_fsend_clicked()
+{
+    sendflag = 1;
+    QString fName = QFileDialog::getOpenFileName(this,
+                                           tr("Open Spreadsheet"), ".",
+                                           tr("Images (*.MP3 *.MP4 *.RMVB *.JPG)"));
+    fileName = fName.right(fName.size()-fName.lastIndexOf('/')-1);
+    qDebug() << fileName << endl;
+    socket->write(fileName.toStdString().c_str());
+    file.setFileName(fName);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        QMessageBox::information(this,"警告","文件打开失败",QMessageBox::Ok);
+        return;
+    }
+    int num = file.size()/PACKSIZE + 1;
+    progressDlg = new QProgressDialog(this);
+    QFont font("ZYSong18030",12);
+    progressDlg->setFont(font);
+    progressDlg->setWindowModality(Qt::WindowModal);
+    progressDlg->setMinimumDuration(5);
+    progressDlg->setWindowTitle(tr("please wait"));
+    progressDlg->setLabelText(tr("正在发送......      "));
+    progressDlg->setCancelButtonText(tr("取消"));
+    progressDlg->setRange(0,num);
+//    for(int i=0;i<=num;i++)
+//    {
+//        progressDlg->setValue(i);
+//        if(progressDlg->wasCanceled())
+//            return;
+//    }
+    QEventLoop eventloop;
+    QTimer::singleShot(100, &eventloop, SLOT(quit()));
+    eventloop.exec();
+    sendFile();
+}
+
+void Interface::sendFile()
+{
+    file.seek(isend*PACKSIZE);
+    if (!file.atEnd())
+    {
+        QByteArray line = file.read(PACKSIZE);
+        udpSocket->writeDatagram(line,QHostAddress(to_user_ip),PORT_F);
+        isend++;
+        progressDlg->setValue(isend);
+        if(progressDlg->wasCanceled())
+            return;
+        qDebug() << "send over!" << isend << line.size();
+    }
+    else
+    {
+        isend = 0;
+        sendflag = 0;
+        file.close();
+        QMessageBox::information(this,"恭喜","文件传送成功",QMessageBox::Ok);
+    }
+}
+
+void Interface::readPendingDatagrams()
+{
+    if(sendflag) //send
+    {
+        while (udpSocket->hasPendingDatagrams())
+        {
+            QByteArray datagram;
+            datagram.resize(udpSocket->pendingDatagramSize());
+            QHostAddress sender;
+            quint16 senderPort;
+            udpSocket->readDatagram(datagram.data(), datagram.size(),&sender, &senderPort);
+            //sleep(1);
+            if (datagram == "1")
+            {
+                qDebug() <<"send ok!";
+//                QEventLoop eventloop;
+//                QTimer::singleShot(100, &eventloop, SLOT(quit()));
+//                eventloop.exec();
+                sendFile();
+            }
+//            else
+//            {
+//                qDebug() <<"Timeout!";
+//                isend = isend - 1;
+//                sendFile();
+//            }
+        }
+    }
+    else //receive
+    {
+        file.setFileName("/Users/Ronchi/Downloads/recv.mp4");
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Unbuffered))
+        {
+            QMessageBox::information(this,"警告","文件写入失败",QMessageBox::Ok);
+            return;
+        }
+        while (udpSocket->hasPendingDatagrams())
+        {
+            QByteArray datagram;
+            datagram.resize(udpSocket->pendingDatagramSize());
+            QHostAddress sender;
+            quint16 senderPort;
+            udpSocket->readDatagram(datagram.data(), datagram.size(),&sender, &senderPort);
+
+            file.write(datagram.data(),datagram.size());
+            irecv ++;
+            udpSocket->writeDatagram("1",1, sender ,senderPort);
+
+            qDebug() << irecv << datagram.size();
+        }
+    }
+}
+
