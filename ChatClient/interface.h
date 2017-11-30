@@ -15,6 +15,7 @@
 #include <QProgressDialog>
 #include <QFont>
 #include <string>
+#include <QEvent>
 #include <QCloseEvent>
 #include <QTableWidgetItem>
 #include "connectserver.h"
@@ -24,6 +25,7 @@
 #include <QTextCodec>
 #include <QFile>
 #include <QTimer>
+#include <unistd.h>
 
 #define PORT_P2P 6666
 #define PORT_F 7777
@@ -49,6 +51,7 @@ public:
     ~Interface();
 protected:
     void closeEvent(QCloseEvent * event);
+    void timerEvent(QTimerEvent * event);
 private:
     Ui::Interface *ui;
     int sockfd;
@@ -60,6 +63,8 @@ private:
     int to_user_id;
     int isend;
     int irecv;
+    int i_timeout;
+    int timeout;
 
     QTcpSocket *socket;
     QTcpServer *server;

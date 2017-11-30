@@ -21,6 +21,8 @@ Interface::Interface(int sockfd, int my_id, QWidget *parent) :
     sendflag = 0;
     isend = 0;
     irecv = 0;
+    i_timeout = 0;
+    timeout = 0;
 
     ui->tableWidget_msgPage->setColumnCount(1);
     ui->tableWidget_msgPage->setShowGrid(false);
@@ -239,7 +241,16 @@ void Interface::readData() {
     int row_count = ui->tableWidget_msgPage->rowCount();
     ui->tableWidget_msgPage->insertRow(row_count);
     ui->tableWidget_msgPage->setItem(row_count,0,new QTableWidgetItem(fromname+": "+data));
-
+    if(data.right(3) == "mp3"||data.right(3) == "mp4"||data.right(3) == "jpg"||data.right(3) == "png"||data.right(4) == "rmvb")
+    {
+        fileName = data;
+        file.setFileName("/Users/Ronchi/Downloads/" + fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Unbuffered))
+        {
+            QMessageBox::information(this,"警告","文件写入失败",QMessageBox::Ok);
+            return;
+        }
+    }
 }
 
 void Interface::initp2pServer()
@@ -264,7 +275,7 @@ void Interface::on_btn_fsend_clicked()
     sendflag = 1;
     QString fName = QFileDialog::getOpenFileName(this,
                                            tr("Open Spreadsheet"), ".",
-                                           tr("Images (*.MP3 *.MP4 *.RMVB *.JPG)"));
+                                           tr("Images (*.MP3 *.MP4 *.JPG *.PNG *.RMVB)"));
     fileName = fName.right(fName.size()-fName.lastIndexOf('/')-1);
     qDebug() << fileName << endl;
     socket->write(fileName.toStdString().c_str());
@@ -284,14 +295,9 @@ void Interface::on_btn_fsend_clicked()
     progressDlg->setLabelText(tr("正在发送......      "));
     progressDlg->setCancelButtonText(tr("取消"));
     progressDlg->setRange(0,num);
-//    for(int i=0;i<=num;i++)
-//    {
-//        progressDlg->setValue(i);
-//        if(progressDlg->wasCanceled())
-//            return;
-//    }
+
     QEventLoop eventloop;
-    QTimer::singleShot(100, &eventloop, SLOT(quit()));
+    QTimer::singleShot(200, &eventloop, SLOT(quit()));
     eventloop.exec();
     sendFile();
 }
@@ -320,54 +326,58 @@ void Interface::sendFile()
 
 void Interface::readPendingDatagrams()
 {
+    QByteArray datagram;
+    datagram.resize(udpSocket->pendingDatagramSize());
+    QHostAddress sender;
+    quint16 senderPort;
     if(sendflag) //send
     {
         while (udpSocket->hasPendingDatagrams())
         {
-            QByteArray datagram;
-            datagram.resize(udpSocket->pendingDatagramSize());
-            QHostAddress sender;
-            quint16 senderPort;
+//            QEventLoop eventloop;
+//            QTimer::singleShot(100, &eventloop, SLOT(quit()));
+//            eventloop.exec();
             udpSocket->readDatagram(datagram.data(), datagram.size(),&sender, &senderPort);
-            //sleep(1);
             if (datagram == "1")
             {
                 qDebug() <<"send ok!";
-//                QEventLoop eventloop;
-//                QTimer::singleShot(100, &eventloop, SLOT(quit()));
-//                eventloop.exec();
+                i_timeout = isend;
                 sendFile();
             }
-//            else
-//            {
-//                qDebug() <<"Timeout!";
-//                isend = isend - 1;
-//                sendFile();
-//            }
+            if (datagram == "2")
+            {
+                qDebug() <<"Timeout!";
+                isend = i_timeout;
+                sendFile();
+            }
         }
     }
     else //receive
     {
-        file.setFileName("/Users/Ronchi/Downloads/recv.mp4");
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Unbuffered))
-        {
-            QMessageBox::information(this,"警告","文件写入失败",QMessageBox::Ok);
-            return;
-        }
+        int id = startTimer(100);
+        if(id == 0)
+            qDebug() << "不能开始计时";
         while (udpSocket->hasPendingDatagrams())
         {
-            QByteArray datagram;
-            datagram.resize(udpSocket->pendingDatagramSize());
-            QHostAddress sender;
-            quint16 senderPort;
             udpSocket->readDatagram(datagram.data(), datagram.size(),&sender, &senderPort);
 
+            file.seek(irecv*PACKSIZE);
             file.write(datagram.data(),datagram.size());
             irecv ++;
             udpSocket->writeDatagram("1",1, sender ,senderPort);
-
             qDebug() << irecv << datagram.size();
         }
+        if(timeout) //超时
+        {
+            timeout = 0;
+            udpSocket->writeDatagram("2",1, sender ,senderPort);
+        }
+        killTimer(id);
     }
 }
 
+void Interface::timerEvent(QTimerEvent * event)
+{
+    qDebug( "timer event, id %d", event->timerId() );
+    timeout = 1;
+}
